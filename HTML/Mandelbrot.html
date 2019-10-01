@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <title>Mandelbrot</title>
+  </head>
+  <body>
+    <canvas id="canvas" width="1000" height="1000"></canvas>
+    <script>
+      function Mandelbrot(x, y) {
+        let real = 0, imag = 0;
+        let _real = 0, _imag = 0;
+        for (var i = 0; i < 50; i++) {
+          _real = real*real - imag*imag + x;
+          _imag = 2*real*imag + y;
+          real = _real;
+          imag = _imag;
+          if (real*real + imag*imag > 4) {
+            break;
+          }
+        }
+        return i
+      }
+
+      var canvas = document.getElementById('canvas');
+      canvas.width = document.body.clientWidth;
+      canvas.height = document.documentElement.clientHeight;
+      if (canvas.getContext) {
+        let ctx = canvas.getContext('2d');
+        const size_x = 8;
+        const size_y = 4;
+        const pixel_x = canvas.width;
+        const pixel_y = canvas.height;
+        let dx = size_x / pixel_x
+        let dy = size_y / pixel_y;
+
+        let drawArray = [];
+        for (var i = 0; i < pixel_x; i++) {
+          drawArray[i] = [];
+          for (var j = 0; j < pixel_y; j++) {
+            drawArray[i][j] = Mandelbrot(i*dx - size_x*0.5, j*dy - size_y*0.5);
+          }
+        }
+
+        let imageData = ctx.createImageData(pixel_x, pixel_y);
+        for (var i = 0; i < pixel_x; i++) {
+          for (var j = 0; j < pixel_y; j++) {
+            imageData.data[4*pixel_x*j + 4*i + 0] = 0;
+            imageData.data[4*pixel_x*j + 4*i + 1] = 0;
+            imageData.data[4*pixel_x*j + 4*i + 2] = 0;
+            imageData.data[4*pixel_x*j + 4*i + 3] = drawArray[i][j] * (255/50);
+          }
+        }
+        
+        ctx.putImageData(imageData, 0, 0);
+        console.log("End")
+      }
+    </script>
+  </body>
+</html>
