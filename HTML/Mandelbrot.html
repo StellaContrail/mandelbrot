@@ -3,58 +3,262 @@
   <head>
     <meta charset="UTF-8">
     <title>Mandelbrot</title>
+    <style>
+        canvas {
+          border:solid 1px #000000;
+        }
+
+        html, body {
+          overflow: hidden;
+        }
+
+        .content {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          height: 800px;
+          text-align: right;
+        }
+
+        #status {
+          width: 1000px;
+        }
+    </style>
   </head>
   <body>
-    <canvas id="canvas" width="1000" height="1000"></canvas>
+    <div class="content">
+      <span id="manual">How to control : Left Click = Translation, Mouse Wheel = Zoom In/Out</span>
+      <canvas id="canvas"></canvas>
+      <span id="status">STATUS</span>
+      <span id="info">INFO</span>
+      <span id="coordinate">COORDINATE</span>
+    </div>
     <script>
-      function Mandelbrot(x, y) {
-        let real = 0, imag = 0;
-        let _real = 0, _imag = 0;
-        for (var i = 0; i < 50; i++) {
-          _real = real*real - imag*imag + x;
-          _imag = 2*real*imag + y;
-          real = _real;
-          imag = _imag;
-          if (real*real + imag*imag > 4) {
-            break;
+      class Complex {
+        constructor(real, imag) {
+          if (real === undefined && imag === undefined) {
+            this.real = 0;
+            this.imag = 0;
+          } else {
+            this.real = real;
+            this.imag = imag;
           }
         }
-        return i
+
+        pow2() {
+          return new Complex(this.real*this.real - this.imag*this.imag, 2*this.real*this.imag);
+        }
+
+        add(Z) {
+          return new Complex(this.real + Z.real, this.imag + Z.imag);
+        }
+
+        subtract(Z) {
+          return new Complex(this.real - Z.real, this.imag - Z.imag);
+        }
+
+        multiply(lambda) {
+          return new Complex(this.real * lambda, this.imag * lambda);
+        }
+
+        abs2() {
+          return this.real*this.real + this.imag*this.imag;
+        }
+
+        toString() {
+          return "(" + this.real.toFixed(2) + ", " + this.imag.toFixed(2) + ")";
+        }
+      };
+
+      class ComplexField {
+        constructor(n_real, n_imag, min_complex, max_complex) {
+          this.n_real = n_real;
+          this.n_imag = n_imag;
+          this.min_complex = min_complex;
+          this.max_complex = max_complex;
+          this.dImag = (max_complex.imag - min_complex.imag) / n_imag;
+          this.dReal = (max_complex.real - min_complex.real) / n_real;
+
+          this.createField();
+        }
+
+        createField() {
+          this.value = [];
+          this.domain = [];
+          for (let index_real = 0; index_real <= this.n_real; index_real++) {
+            let real = this.min_complex.real + index_real * this.dReal;
+            this.value[index_real] = [];
+            this.domain[index_real] = [];
+
+            for (let index_imag = 0; index_imag <= this.n_imag; index_imag++) {
+              let imag = this.max_complex.imag - index_imag * this.dImag;
+              this.value[index_real][index_imag] = 0; 
+              this.domain[index_real][index_imag] = new Complex(real, imag);
+            }
+          }
+        }
+
+        convertIndexToDomain(real, imag) {
+          if (imag === undefined) {
+            let index_complex = real;
+            return this.domain[index_complex.real][index_complex.imag];
+          } else {
+            return this.domain[real][imag];
+          }
+        }
+
+        moveOriginToDomain(complex) {
+          let originDomain = this.originDomain();
+          let offsetDomain = new Complex(complex.real - originDomain.real, complex.imag - originDomain.imag);
+          this.TranslationDomain(offsetDomain);
+        }
+
+        originDomain() {
+          return this.convertIndexToDomain(this.originIndex());
+        }
+
+        originIndex() {
+          return new Complex(Math.round(this.n_real * 0.5), Math.round(this.n_imag * 0.5));
+        }
+
+        TranslationDomain(complex) {
+          for (let index_real = 0; index_real <= this.n_real; index_real++) {
+            for (let index_imag = 0; index_imag <= this.n_imag; index_imag++) {
+              this.domain[index_real][index_imag] = this.domain[index_real][index_imag].add(complex);
+            }
+          }
+        }
+
+        TranslationIndex(complex) {
+          let domain_offset = new Complex(complex.real * this.dReal, -complex.imag * this.dImag);
+          this.TranslationDomain(domain_offset);
+        }
+
+        zoom(scale) {
+          let mul;
+          if (scale > 0) {
+            mul = 1 / scale;
+          } else {
+            mul = -scale;
+          }
+
+          for (let index_real = 0; index_real <= this.n_real; index_real++) {
+            for (let index_imag = 0; index_imag <= this.n_imag; index_imag++) {
+              this.domain[index_real][index_imag] = this.domain[index_real][index_imag].multiply(mul);
+            }
+          }
+
+          this.max_complex = this.domain[this.n_real][0];
+          this.min_complex = this.domain[0][this.n_imag];
+
+          this.dImag = this.dImag * mul;
+          this.dReal = this.dReal * mul;
+        }
       }
 
-      var canvas = document.getElementById('canvas');
-      canvas.width = document.body.clientWidth;
-      canvas.height = document.documentElement.clientHeight;
-      if (canvas.getContext) {
-        let ctx = canvas.getContext('2d');
-        const size_x = 8;
-        const size_y = 4;
-        const pixel_x = canvas.width;
-        const pixel_y = canvas.height;
-        let dx = size_x / pixel_x
-        let dy = size_y / pixel_y;
+      class Mandelbrot {
+        constructor(Nx, Ny, maxIter) {
+          this.field = new ComplexField(Nx, Ny, new Complex(-4, -2), new Complex(4, 2));
+          this.maxIter = maxIter;
 
-        let drawArray = [];
-        for (var i = 0; i < pixel_x; i++) {
-          drawArray[i] = [];
-          for (var j = 0; j < pixel_y; j++) {
-            drawArray[i][j] = Mandelbrot(i*dx - size_x*0.5, j*dy - size_y*0.5);
+          return this;
+        }
+
+        checkDiv(C) {
+          let Z = new Complex();
+          for (var iter = 0; iter < this.maxIter; iter++) {
+            Z = Mandelbrot._f(Z, C)
+            if (Z.abs2() > 4) { break; }
+          }
+          return iter
+        }
+        static _f(Z, C) {
+          return Z.pow2().add(C);
+        }
+
+        _calc() {
+          for (let index_real = 0; index_real <= this.field.n_real; index_real++) {
+            for (let index_imag = 0; index_imag <= this.field.n_imag; index_imag++) {
+              this.field.value[index_real][index_imag] = this.checkDiv(this.field.domain[index_real][index_imag]);
+            }
           }
         }
 
-        let imageData = ctx.createImageData(pixel_x, pixel_y);
-        for (var i = 0; i < pixel_x; i++) {
-          for (var j = 0; j < pixel_y; j++) {
-            imageData.data[4*pixel_x*j + 4*i + 0] = 0;
-            imageData.data[4*pixel_x*j + 4*i + 1] = 0;
-            imageData.data[4*pixel_x*j + 4*i + 2] = 0;
-            imageData.data[4*pixel_x*j + 4*i + 3] = drawArray[i][j] * (255/50);
+        draw(ctx) {
+          this._calc();
+
+          let image_array = ctx.createImageData(this.field.n_real, this.field.n_imag);
+          for (let iter_real = 0; iter_real <= this.field.n_real; iter_real++) {
+            for (let iter_imag = 0; iter_imag <= this.field.n_imag; iter_imag++) {
+              // RGBA
+              image_array.data[4*this.field.n_real*iter_imag + 4*iter_real + 0] = 0;
+              image_array.data[4*this.field.n_real*iter_imag + 4*iter_real + 1] = 0;
+              image_array.data[4*this.field.n_real*iter_imag + 4*iter_real + 2] = 0;
+              image_array.data[4*this.field.n_real*iter_imag + 4*iter_real + 3] = (this.field.value[iter_real][iter_imag] / this.maxIter) * 255;
+            }
           }
+          ctx.putImageData(image_array, 0, 0);
+          status.textContent = "Completed drawing";
+          info.textContent = "Nx:" + this.field.n_real + " Ny:" + this.field.n_imag 
+          + " dx:" + this.field.dReal + " dy:" + this.field.dImag 
+          + " Origin:" + this.field.originDomain()
+          + " Min:" + this.field.min_complex
+          + " Max:" + this.field.max_complex;
         }
-        
-        ctx.putImageData(imageData, 0, 0);
-        console.log("End")
       }
+
+      let mousePointerIndex = new Complex();
+      function CanvasMouseMoveEvent(e) {
+        mousePointerIndex.real = e.clientX - rect.left;
+        mousePointerIndex.imag = e.clientY - rect.top;
+        coordinate.textContent = "Mouse Position Index:" + mousePointerIndex;
+      }
+      function CanvasClickEvent(e) {
+        status.textContent = "Running Translation";
+        let originIndex = mandelbrot.field.originIndex();
+        let offsetIndex = mousePointerIndex.subtract(originIndex);
+        setTimeout(_Translation, 50, offsetIndex)
+      }
+      function _Translation(offsetIndex) {
+        mandelbrot.field.TranslationIndex(offsetIndex);
+        mandelbrot.draw(ctx);
+      }
+      function CanvasMouseWheelEvent(e) {
+        let scale;
+        if (e.detail > 0) {
+          status.innerText = "Zooming out";
+          scale = -2;
+        } else {
+          status.innerText = "Zooming in";
+          scale = 2;
+        }
+        setTimeout(_zoomTranslation, 50, scale)
+      }
+      function _zoomTranslation(scale) {
+        let oldPos = mandelbrot.field.convertIndexToDomain(mousePointerIndex);
+        mandelbrot.field.zoom(scale);
+        mandelbrot.field.moveOriginToDomain(oldPos);
+        mandelbrot.draw(ctx);
+      }
+
+      let canvas = document.getElementById("canvas");
+      let status = document.getElementById("status");
+      let info = document.getElementById("info");
+      let coordinate = document.getElementById("coordinate");
+      // Event Listeners
+      canvas.addEventListener("mousemove", CanvasMouseMoveEvent);
+      canvas.addEventListener("DOMMouseScroll", CanvasMouseWheelEvent);
+      canvas.addEventListener("click", CanvasClickEvent);
+      // Resize canvas size
+      canvas.width = 1000; //window.innerWidth;
+      canvas.height = 500; //document.documentElement.clientHeight;
+      let rect = canvas.getBoundingClientRect();
+      const pixel_x = canvas.width;
+      const pixel_y = canvas.height;
+      let mandelbrot = new Mandelbrot(pixel_x, pixel_y, 50);
+      let ctx = canvas.getContext("2d");
+      mandelbrot.draw(ctx);
     </script>
   </body>
 </html>
